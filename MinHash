@@ -1,0 +1,363 @@
+package com.lhs;
+
+/**
+ * Shingling(putting the content in a map, set- a way of slicing the data)->minHashing(similar bucket, signature)->LHS(Jaccard similarity)
+ * 
+ */
+import java.io.BufferedReader;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.FileReader;
+import java.io.IOException;
+import java.io.PrintStream;
+import java.io.PrintWriter;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Random;
+import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+public class MinHash<T> {
+
+	static Set<String> set1 = new HashSet<String>();
+	static Set<String> set2 = new HashSet<String>();
+	// static int errorCoeffecient;
+
+	private int hash[];
+	private int numHash;
+
+	/**
+	 * 
+	 */
+	public MinHash(int numHash) {
+		this.numHash = numHash;
+		hash = new int[numHash];
+
+		Random r = new Random(11);
+		for (int i = 0; i < numHash; i++) {
+			int a = (int) r.nextInt();
+			int b = (int) r.nextInt();
+			int c = (int) r.nextInt();
+			int x = hash(a * b * c, a, b, c);
+			hash[i] = x;
+		}
+	}
+
+	// public void hashString(Set<String> s1, Set<String> s2) {
+	// int size = s1.size() + s2.size();
+	// hash = new int[size];
+	// String s;
+	//
+	// for (int i = 0; i < s1.size(); i++) {
+	//
+	// }
+	// }
+
+	/**
+	 * LSH implementation- This is where the comparison happens!
+	 * 
+	 * @param set1
+	 * @param set2
+	 * @return 1. Break down the document a set of shingles. 2. Calculate the
+	 *         hash value for every shingle. 3. Store the minimum hash value
+	 *         found in step 2. 4. Repeat steps 2 and 3 with different hash
+	 *         algorithms 199 more times to get a total of 200 min hash values.
+	 */
+	public double similarity(Set<T> set1, Set<T> set2) {
+
+		int numSets = 2;
+		Map<T, boolean[]> bitMap = buildBitMap(set1, set2);
+
+		int[][] minHashValues = initializeHashBuckets(numSets, numHash);
+
+		computeMinHashForSet(set1, 0, minHashValues, bitMap);
+		computeMinHashForSet(set2, 1, minHashValues, bitMap);
+
+		return computeSimilarityFromSignatures(minHashValues, numHash);
+	}
+
+	/**
+	 * A constant holding the maximum value an integer can have, 2^31-1.
+	 * 
+	 */
+	private static int[][] initializeHashBuckets(int numSets,
+			int numHashFunctions) {
+		int[][] minHashValues = new int[numSets][numHashFunctions];
+
+		for (int i = 0; i < numSets; i++) {
+			for (int j = 0; j < numHashFunctions; j++) {
+				minHashValues[i][j] = Integer.MAX_VALUE;
+			}
+		}
+		return minHashValues;
+	}
+
+	/**
+	 * Jaccard similarity! similarity between two sets A and B=
+	 * (A'intersection'B)/(A U B) And error co-effecient should also be
+	 * calculated to get the exact result.
+	 * 
+	 * @param minHashValues
+	 * @param numHashFunctions
+	 * @return
+	 */
+	private static double computeSimilarityFromSignatures(
+			int[][] minHashValues, int numHashFunctions) {
+		int identicalMinHashes = 0;
+		int errorCoefficient;
+		for (int i = 0; i < numHashFunctions; i++) {
+			if (minHashValues[0][i] == minHashValues[1][i]) {
+				identicalMinHashes++;
+			}
+		}
+		//identicalMinHashes=identicalMinHashes/2;
+		// we just need more refined error co-efficient - This is needed as
+		// there will be some common words like 'for', 'the', 'an' etc
+		// which will be there in any document regardless of the document. The
+		// assumption and the inferences I got from extensive testing
+		// is that, more the similarity more the common words.
+		
+		// The coefficient values needs to be modified more after more rigorous testing.
+
+		double similar = (1.0 * (identicalMinHashes) / numHashFunctions) * 100;
+
+		if (similar > 0 && similar <= 20 && identicalMinHashes>20) {
+			errorCoefficient = (int) (.12 * identicalMinHashes);
+		} else if (similar >= 20 && similar < 30 && identicalMinHashes>=20) {
+			errorCoefficient = (int) (.14 * identicalMinHashes);
+		} else if (similar >= 30 && similar < 40 && identicalMinHashes>=20) {
+			errorCoefficient = (int) (.16 * identicalMinHashes);
+		} else if (similar >= 40 && similar < 60 && identicalMinHashes>=20) {
+			errorCoefficient = (int) (.20 * identicalMinHashes);
+		} else if (similar >= 50 && similar < 70 && identicalMinHashes>=20) {
+			errorCoefficient = (int) (.22 * identicalMinHashes);
+		} else if (similar >= 70 && similar < 80 && identicalMinHashes>=20) {
+			errorCoefficient = (int) (.23 * identicalMinHashes);
+		} else if (similar >= 80 && similar < 90 && identicalMinHashes>=20) {
+			errorCoefficient = (int) (.25 * identicalMinHashes);
+		} else {
+			errorCoefficient = (int) (.001* identicalMinHashes);
+		}
+		return (1.0 * (identicalMinHashes - errorCoefficient))
+				/ numHashFunctions * 100;
+		
+//		if (similar > 0 && similar <= 20 && identicalMinHashes>20) {
+//			errorCoefficient = (int) (.08 * identicalMinHashes);
+//		} else if (similar >= 20 && similar < 30 && identicalMinHashes>=20) {
+//			errorCoefficient = (int) (.09 * identicalMinHashes);
+//		} else if (similar >= 30 && similar < 40 && identicalMinHashes>=20) {
+//			errorCoefficient = (int) (.10 * identicalMinHashes);
+//		} else if (similar >= 40 && similar < 60 && identicalMinHashes>=20) {
+//			errorCoefficient = (int) (.11 * identicalMinHashes);
+//		} else if (similar >= 50 && similar < 70 && identicalMinHashes>=20) {
+//			errorCoefficient = (int) (.11 * identicalMinHashes);
+//		} else if (similar >= 70 && similar < 80 && identicalMinHashes>=20) {
+//			errorCoefficient = (int) (.12 * identicalMinHashes);
+//		} else if (similar >= 80 && similar < 90 && identicalMinHashes>=20) {
+//			errorCoefficient = (int) (.12 * identicalMinHashes);
+//		} else {
+//			errorCoefficient = (int) (.001* identicalMinHashes);
+//		}
+//		return (1.0 * (identicalMinHashes - errorCoefficient))
+//				/ numHashFunctions * 100;
+
+	}
+
+	/**
+	 * 
+	 * @param x
+	 * @param a
+	 * @param b
+	 * @param c
+	 * @return
+	 */
+	private static int hash(int x, int a, int b, int c) {
+		int hashValue = (int) ((a * (x >> 4) + b * x + c) & 131071);
+		return Math.abs(hashValue);
+	}
+
+	/**
+	 * 
+	 * @param set
+	 * @param setIndex
+	 * @param minHashValues
+	 * @param bitArray
+	 *            for each row r -> for each column c -> if c has 1 in row r ->
+	 *            for each hash function hi do -> if hi (r ) is a smaller value
+	 *            than M (i, c ) then -> M (i, c ) := hi (r );
+	 * 
+	 * 
+	 * 
+	 * 
+	 */
+	private void computeMinHashForSet(Set<T> set, int setIndex,
+			int[][] minHashValues, Map<T, boolean[]> bitArray) {
+		int index = 0;
+		for (T element : bitArray.keySet()) { // for every element in the bit
+												// array
+			for (int i = 0; i < numHash; i++) { // for every hash
+				if (set.contains(element)) { // if the set contains the element
+					int hindex = hash[index]; // get the hash
+					if (hindex < minHashValues[setIndex][index]) {
+						// if current hash is smaller than the existing hash in
+						// the slot then replace with the smaller hash value
+						minHashValues[setIndex][index] = hindex;
+					}
+				}
+			}
+			index++;
+		}
+	}
+
+	/**
+	 * This step comes after calculating minHash- the second step overall!
+	 * called from similarity()
+	 * 
+	 * steps: 1. put all the elements of the set1 to the bitmap map 2. check for
+	 * the elements in set2 if it is contained in set1 3. if it contains set to
+	 * true and add to the bitmap 4. if not then set to false and add to the
+	 * bitmap --The key of the Map is the value and the value of the Map is the
+	 * true/false
+	 * 
+	 * @param set1
+	 * @param set2
+	 * @return
+	 */
+
+	//
+
+	public Map<T, boolean[]> buildBitMap(Set<T> set1, Set<T> set2) {
+		Map<T, boolean[]> bitArray = new HashMap<T, boolean[]>();
+		for (T t : set1) {
+			bitArray.put(t, new boolean[] { true, false });
+
+		}
+
+		for (T t : set2) {
+			if (bitArray.containsKey(t)) {
+				// item is present in set1
+				bitArray.put(t, new boolean[] { true, true });
+			} else if (!bitArray.containsKey(t)) {
+				// item is not present in set1
+				bitArray.put(t, new boolean[] { false, true });
+			}
+		}
+		System.out.println("The bit array is : " + bitArray + "\n");
+		return bitArray;
+	}
+
+	public static void main(String[] args) throws IOException {
+		ExecutorService executor = Executors.newFixedThreadPool(3);
+		final PrintStream out;
+		String resultLocation=args[2];
+		
+			out = new PrintStream(new FileOutputStream(resultLocation, false));
+			// System.setOut(out);
+			
+
+
+
+		// long startTime = System.currentTimeMillis();
+
+		if (args.length == 0) {
+			System.out.println("enter the input in the argument ! \n");
+			System.out.println("Fromat:  java -jar LHSTest.jar <arg1> <arg2> ");
+			System.exit(0);
+		} else {
+			String source1 = args[0];
+			String source2 = args[1];
+			
+
+			try {
+				// BufferedReader bf1=new BufferedReader(new
+				// FileReader("C:/Users/yp908196/Documents/tesseract-ocr/vs2008/DLL_Debug/test.txt"));
+				// BufferedReader bf2=new BufferedReader(new
+				// FileReader("C:/Users/yp908196/Documents/tesseract-ocr/vs2008/DLL_Debug/text.txt"));
+				//PrintWriter writer = new PrintWriter("C:/Users/yp908196/Documents/tesseract-ocr/vs2008/DLL_Debug/FinalTest.txt", "UTF-8");
+
+				
+				BufferedReader bf1 = new BufferedReader(new FileReader(source1));
+				BufferedReader bf2 = new BufferedReader(new FileReader(source2));
+				String line = null;
+				while ((line = bf1.readLine()) != null) {
+					String[] parts = line.split("\\s+");
+					for (String s : parts) {
+						set1.add(s);
+						// h1 = s.hashCode();
+						// System.out.println(h1);
+					}
+				}
+				
+				System.out.println("The first file contains: \n " + set1 + "\n"
+						+ " the number of words is: " + set1.size() + "\n");
+				
+				while ((line = bf2.readLine()) != null) {
+					String[] parts = line.split("\\s+");
+					for (String s : parts) {
+						set2.add(s);
+						// h2 = s.hashCode();
+						// System.out.println(h2);
+					}
+				}
+				System.out.println("The second file contains: \n" + set2 + "\n"
+						+ "the number of words is: " + set2.size() + "\n");
+			} catch (Exception e) {
+				// TODO Auto-generated catch block
+				System.out.println("something went wrong! ");
+				e.printStackTrace();
+			}
+			int size = set1.size() + set2.size();
+
+			System.out
+					.println("The total number of words in the combined set is "
+							+ size + "\n");
+
+			// The method calling- 1. to find the Minhash(signature) and 2.
+			// implementation of LSH algorithm!
+			executor.execute(new Runnable() {
+
+				@Override
+				public void run() {
+					long startTime = System.currentTimeMillis();
+					MinHash<String> minHash = new MinHash<String>(set1.size()
+							+ set2.size());
+					System.out
+							.println("The similarity between the two document is : "
+									+ minHash.similarity(set1, set2)
+									+ " %"
+									+ "\n");
+					
+					out.println("The similarity between the two file is: " + minHash.similarity(set1, set2) + "%" );
+					out.close();
+					
+					long stopTime = System.currentTimeMillis();
+					long elapsedTime = stopTime - startTime;
+					System.out.println("Total execution time: " + elapsedTime
+							+ " milli seconds\n");
+					System.out
+							.println("P.S: Similarity is defined as the similarity between the document and not the containment");
+					// TODO Auto-generated method stub
+
+				}
+			});
+			executor.shutdown();
+
+//			 DataFilter df = new DataFilter();   
+//			    PrintStream out;
+//			    try {
+//			        out = new PrintStream(new FileOutputStream("C:\\test1.txt", true));
+//			        System.setOut(out);
+//			        df.displayCategorizedList();
+//			    } catch (FileNotFoundException e) {
+//			        // TODO Auto-generated catch block
+//			        e.printStackTrace();
+//			    } finally {
+//			        if (out != null)
+//			            out.close();
+//			    }
+//						
+		}
+	}
+}
